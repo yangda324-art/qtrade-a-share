@@ -1,0 +1,23 @@
+# 策略参数集中配置
+# 每个策略都用唯一 id 命名，方便审计日志追溯哪个版本的策略下的单。
+
+strategies:
+  - id: ma_cross_v1
+    class: qtrade.strategies.technical.ma_cross.MACrossStrategy
+    enabled: true
+    params:
+      fast_window: 5
+      slow_window: 20
+      position_pct: 0.3       # 单标的最多占组合 30%
+    universe:                  # 适用标的
+      - "600519.SH"            # 贵州茅台
+      - "000001.SZ"            # 平安银行
+
+  - id: llm_multi_agent_v1
+    class: qtrade.strategies.llm.graph.LLMMultiAgentStrategy
+    enabled: false             # 默认关闭，调好后再打开
+    params:
+      decision_threshold: 0.6
+      position_pct: 0.2
+    universe:
+      - "600519.SH"

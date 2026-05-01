@@ -1,0 +1,56 @@
+# qtrade 默认配置
+# 环境特定值用 .env 覆盖；策略参数在 strategies.yaml；风控在 risk.yaml。
+
+app:
+  name: qtrade
+  env: dev                    # dev / paper / live
+
+paths:
+  data_dir: ./data
+  log_dir: ./logs
+  cache_dir: ./data/cache
+  db_path: ./data/qtrade.sqlite
+
+market:
+  exchange: SSE_SZSE          # 沪深
+  timezone: Asia/Shanghai
+  trading_hours:
+    morning: ["09:30", "11:30"]
+    afternoon: ["13:00", "15:00"]
+  # A 股交易费用模型
+  fees:
+    commission_rate: 0.00025  # 万 2.5（多数券商水平，按需调整）
+    commission_min: 5.0       # 单笔最低 5 元
+    stamp_tax_rate: 0.0005    # 印花税，仅卖出收取
+    transfer_fee_rate: 0.00001  # 过户费（沪市股票，深市为 0）
+
+llm:
+  provider: deepseek          # deepseek / anthropic / openai
+  deep_model: deepseek-reasoner
+  quick_model: deepseek-chat
+  temperature: 0.2
+  max_retries: 3
+  request_timeout_s: 120
+  cache_enabled: true
+  cache_ttl_hours: 24
+
+agents:
+  enabled:
+    - technical_analyst
+    - sentiment_analyst
+    - bull_researcher
+    - bear_researcher
+    - portfolio_manager
+  debate_rounds: 1            # 多空辩论轮数（1 起步省 token）
+  max_news_items: 10          # 每次给舆情 Agent 的新闻数
+
+scheduler:
+  pre_market_time: "09:00"    # 盘前分析
+  intraday_check: "*/30"      # 盘中每 30 分钟检查（cron 风格的分钟）
+  post_market_time: "15:30"   # 盘后复盘
+
+monitoring:
+  alerts:
+    enable_telegram: false
+    enable_serverchan: false
+  metrics_retention_days: 90

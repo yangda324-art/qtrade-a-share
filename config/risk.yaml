@@ -1,0 +1,34 @@
+# 风控规则集中配置
+# 这些是【硬约束】——LLM Agent 无权修改，违反则订单直接拒绝。
+
+risk:
+  # ---- 账户级 ----
+  account:
+    max_drawdown_pct: 0.15           # 账户峰值起回撤超 15% → 触发熔断
+    daily_loss_limit_pct: 0.05       # 单日亏损超 5% → 当日停止所有策略
+    min_cash_reserve_pct: 0.05       # 至少留 5% 现金
+
+  # ---- 单笔订单 ----
+  order:
+    max_order_value: 50000.0         # 单笔最大金额（元）
+    max_orders_per_day: 50           # 单日最大下单次数
+    min_order_value: 1000.0          # 单笔最小金额（A 股最少 100 股 + 防误下）
+    forbid_t0: true                  # A 股禁止 T+0（当日买入不可卖）
+
+  # ---- 单标的仓位 ----
+  position:
+    max_pct_per_symbol: 0.3          # 单标的最大仓位占比
+    max_symbols: 10                  # 同时持仓最多多少只
+    stop_loss_pct: 0.08              # 止损（成本下方 8%）
+    trailing_stop_pct: 0.10          # 跟踪止损（高点回撤 10%）
+    take_profit_pct: 0.25            # 止盈（成本上方 25%）
+
+  # ---- 黑名单 / 白名单 ----
+  blacklist:                          # 永远不交易的标的
+    - "*ST*"                          # 风险警示股
+  blacklist_match_mode: name_prefix   # name_prefix / exact / regex
+
+  # ---- 异常市况 ----
+  market:
+    skip_if_volatility_index_above: 40  # VIX 类指标过高时空仓
+    skip_first_n_minutes: 5             # 开盘前 N 分钟不交易（避免集合竞价异常）
