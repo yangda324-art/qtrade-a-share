@@ -15,8 +15,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
+from qtrade.core.time import utcnow
 from qtrade.execution.account import Account
-from qtrade.execution.position import Position, PositionBook
+from qtrade.execution.position import PositionBook
 from qtrade.risk.policies import RiskPolicies
 
 
@@ -55,7 +56,7 @@ class RiskEngine:
         if self._circuit_broken:
             return RiskDecision(False, "circuit_breaker", "账户级熔断已触发，禁止任何下单")
 
-        today = today or datetime.utcnow().date()
+        today = today or utcnow().date()
         notional = price * quantity
 
         # 黑名单
@@ -76,8 +77,8 @@ class RiskEngine:
                 f"单笔 {notional:.2f} 低于最小 {self.policies.order.min_order_value:.2f}",
             )
 
-        # 整手
-        if quantity % 100 != 0:
+        # 整手：买入必须 100 股整数倍；卖出允许清理零股。
+        if side == "BUY" and quantity % 100 != 0:
             return RiskDecision(False, "lot_size", "A 股买入必须为 100 股整数倍")
 
         # 当日下单次数
@@ -207,7 +208,7 @@ class RiskEngine:
 
     def reset_daily(self, today: date | None = None) -> None:
         """每日盘前调用，清零当日计数器。熔断状态需要手动 ``resume()``。"""
-        today = today or datetime.utcnow().date()
+        today = today or utcnow().date()
         self._orders_today.pop(today, None)
         self._open_equity = None
 

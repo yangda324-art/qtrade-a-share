@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from qtrade.core.logging import get_logger
 from qtrade.strategies.base import Signal, Strategy, StrategyContext
+
+log = get_logger(__name__)
 
 
 class MACrossStrategy(Strategy):
@@ -51,6 +54,14 @@ class MACrossStrategy(Strategy):
                         confidence=0.6,
                         reason=f"金叉：MA{self.fast} 上穿 MA{self.slow} | 目标仓位 {self.position_pct:.0%}",
                     )
+                )
+            else:
+                # 资金/仓位限制下连一手都买不起 —— 告警，避免用户以为策略没工作
+                one_lot_cost = price * 100
+                log.warning(
+                    "{}: 检测到金叉但买不起一手 | 目标仓位 {:.0f}元 < 一手 {:.0f}元 (单价 {:.2f}) | "
+                    "建议：①--initial-cash 调大 ②--symbol 换成低价票 ③ 上调 position_pct",
+                    ctx.symbol, float(target_value), float(one_lot_cost), float(price),
                 )
         elif prev_diff >= 0 and curr_diff < 0 and pos.available > 0:
             signals.append(

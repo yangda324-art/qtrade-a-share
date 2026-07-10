@@ -27,6 +27,19 @@ def test_lot_size_must_be_100x():
     assert d.rule == "lot_size"
 
 
+def test_sell_allows_odd_lot_cleanup():
+    e = _engine()
+    acct = Account(initial_cash=Decimal("100000"))
+    pos = acct.positions.get("000001.SZ")
+    pos.quantity = 150
+    pos.available = 150
+    pos.avg_cost = Decimal("10")
+    pos.market_price = Decimal("10")
+
+    d = e.check_pre_trade(symbol="000001.SZ", side="SELL", quantity=150, price=10.0, account=acct)
+    assert d.passed, d.detail
+
+
 def test_min_cash_reserve_blocks_full_position():
     e = _engine()
     acct = Account(initial_cash=Decimal("10000"))

@@ -22,8 +22,17 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _alias(*names: str) -> AliasChoices:
+    """同时接受多个环境变量名。
+
+    用途：让密钥既能用业内标准名（``DEEPSEEK_API_KEY``）也能用项目前缀名
+    （``QTRADE_DEEPSEEK_API_KEY``）。前者更符合各家 SDK 习惯，后者保留向后兼容。
+    """
+    return AliasChoices(*names)
 
 # ---------------- 嵌套 schema ----------------
 
@@ -77,6 +86,9 @@ class LLMCfg(BaseModel):
     request_timeout_s: int = 120
     cache_enabled: bool = True
     cache_ttl_hours: int = 24
+    daily_max_decisions: int = 50
+    daily_max_tokens: int = 200_000
+    daily_max_cost_usd: float = 5.0
 
 
 class AgentsCfg(BaseModel):
@@ -99,6 +111,15 @@ class AlertsCfg(BaseModel):
 class MonitoringCfg(BaseModel):
     alerts: AlertsCfg = Field(default_factory=AlertsCfg)
     metrics_retention_days: int = 90
+
+
+class RealtimeTradingCfg(BaseModel):
+    max_quote_age_seconds: int = 15
+    max_price_deviation_bps: int = 50
+
+
+class TradingCfg(BaseModel):
+    realtime: RealtimeTradingCfg = Field(default_factory=RealtimeTradingCfg)
 
 
 class AppCfg(BaseModel):
@@ -128,23 +149,62 @@ class Settings(BaseSettings):
     agents: AgentsCfg = Field(default_factory=AgentsCfg)
     scheduler: SchedulerCfg = Field(default_factory=SchedulerCfg)
     monitoring: MonitoringCfg = Field(default_factory=MonitoringCfg)
+    trading: TradingCfg = Field(default_factory=TradingCfg)
 
     # ---- 来自 .env / 环境变量（敏感）----
-    deepseek_api_key: str | None = None
-    deepseek_base_url: str = "https://api.deepseek.com"
-    anthropic_api_key: str | None = None
-    openai_api_key: str | None = None
-    tushare_token: str | None = None
+    # 关键：密钥既支持业内标准名（DEEPSEEK_API_KEY），也支持加 QTRADE_ 前缀的版本。
+    # 普通用户在 .env 里写 ``DEEPSEEK_API_KEY=sk-xxx`` 就能用，不需要懂前缀机制。
+    deepseek_api_key: str | None = Field(
+        default=None,
+        validation_alias=_alias("DEEPSEEK_API_KEY", "QTRADE_DEEPSEEK_API_KEY"),
+    )
+    deepseek_base_url: str = Field(
+        default="https://api.deepseek.com",
+        validation_alias=_alias("DEEPSEEK_BASE_URL", "QTRADE_DEEPSEEK_BASE_URL"),
+    )
+    anthropic_api_key: str | None = Field(
+        default=None,
+        validation_alias=_alias("ANTHROPIC_API_KEY", "QTRADE_ANTHROPIC_API_KEY"),
+    )
+    openai_api_key: str | None = Field(
+        default=None,
+        validation_alias=_alias("OPENAI_API_KEY", "QTRADE_OPENAI_API_KEY"),
+    )
+    tushare_token: str | None = Field(
+        default=None,
+        validation_alias=_alias("TUSHARE_TOKEN", "QTRADE_TUSHARE_TOKEN"),
+    )
 
-    gm_token: str | None = None
-    gm_strategy_id: str | None = None
-    gm_account_id: str | None = None
+    gm_token: str | None = Field(
+        default=None,
+        validation_alias=_alias("GM_TOKEN", "QTRADE_GM_TOKEN"),
+    )
+    gm_strategy_id: str | None = Field(
+        default=None,
+        validation_alias=_alias("GM_STRATEGY_ID", "QTRADE_GM_STRATEGY_ID"),
+    )
+    gm_account_id: str | None = Field(
+        default=None,
+        validation_alias=_alias("GM_ACCOUNT_ID", "QTRADE_GM_ACCOUNT_ID"),
+    )
 
-    telegram_bot_token: str | None = None
-    telegram_chat_id: str | None = None
-    serverchan_key: str | None = None
+    telegram_bot_token: str | None = Field(
+        default=None,
+        validation_alias=_alias("TELEGRAM_BOT_TOKEN", "QTRADE_TELEGRAM_BOT_TOKEN"),
+    )
+    telegram_chat_id: str | None = Field(
+        default=None,
+        validation_alias=_alias("TELEGRAM_CHAT_ID", "QTRADE_TELEGRAM_CHAT_ID"),
+    )
+    serverchan_key: str | None = Field(
+        default=None,
+        validation_alias=_alias("SERVERCHAN_KEY", "QTRADE_SERVERCHAN_KEY"),
+    )
 
-    log_level: str = "INFO"
+    log_level: str = Field(
+        default="INFO",
+        validation_alias=_alias("LOG_LEVEL", "QTRADE_LOG_LEVEL"),
+    )
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

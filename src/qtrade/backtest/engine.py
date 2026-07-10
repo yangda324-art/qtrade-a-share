@@ -25,14 +25,14 @@ from decimal import Decimal
 import pandas as pd
 
 from qtrade.backtest.metrics import Metrics, compute_metrics
-from qtrade.core.exceptions import RiskRejected
 from qtrade.core.logging import get_logger
 from qtrade.data.loader import DataLoader, get_loader
 from qtrade.execution.account import Account
 from qtrade.execution.broker.paper import PaperBroker
 from qtrade.execution.fees import AStockFeeModel
 from qtrade.execution.oms import OMS
-from qtrade.persistence.models import OrderSide, OrderType
+from qtrade.persistence import init_db
+from qtrade.persistence.models import OrderSide, OrderStatus, OrderType
 from qtrade.risk.engine import RiskEngine
 from qtrade.risk.policies import RiskPolicies, load_risk_policies
 from qtrade.strategies.base import Signal, Strategy, StrategyContext
@@ -46,6 +46,7 @@ class BacktestResult:
     equity_curve: list[tuple[datetime, Decimal]]
     trades: list[dict]
     final_account: dict
+    trade_count: int | None = None
 
 
 @dataclass
@@ -58,6 +59,7 @@ class BacktestEngine:
     loader: DataLoader = field(default_factory=get_loader)
     slippage_bps: float = 1.0
     persist: bool = False              # 是否把订单写库（默认关，避免回测污染审计表）
+    record_trades: bool = True         # 批量回测可关闭完整成交明细，降低内存占用
 
     def run(self) -> BacktestResult:
         # ----- 准备数据 -----
@@ -90,14 +92,21 @@ class BacktestEngine:
         )
         risk = RiskEngine(policies=self.risk_policies or load_risk_policies())
 
-        oms = OMS(
-            broker=broker,
-            strategy_id=self.strategy.id,
-            risk_check=lambda ctx: self._risk_check_adapter(ctx, risk, account),
-        ) if self.persist else None    # 持久化 OMS 仅在 persist 模式下使用
+        if self.persist:
+            init_db()
+        oms = (
+            OMS(
+                broker=broker,
+                strategy_id=self.strategy.id,
+                risk_check=lambda _ctx: (True, None),  # 已在 _execute_signal 用真实成交价做过风控
+            )
+            if self.persist
+            else None
+        )
 
         trades: list[dict] = []
         trade_pnls: list[float] = []
+        trade_count = 0
 
         self.strategy.on_start()
         try:
@@ -133,7 +142,20 @@ class BacktestEngine:
                         continue
 
                     for sig in signals:
-                        self._execute_signal(sig, broker, risk, account, t, trades, trade_pnls)
+                        filled = self._execute_signal(
+                            sig,
+                            broker,
+                            risk,
+                            account,
+                            t,
+                            trades,
+                            trade_pnls,
+                            oms,
+                            trade_index=trade_count,
+                            record_trade=self.record_trades,
+                        )
+                        if filled:
+                            trade_count += 1
 
                 # 4) 盘后：账户级风控 + 权益快照
                 ts_dt = t.to_pydatetime() if hasattr(t, "to_pydatetime") else datetime.combine(t, datetime.min.time())
@@ -150,6 +172,7 @@ class BacktestEngine:
             equity_curve=list(account.equity_curve),
             trades=trades,
             final_account=account.to_dict(),
+            trade_count=trade_count,
         )
 
     # ------------------------------------------------------------------
@@ -163,13 +186,17 @@ class BacktestEngine:
         ts,
         trades: list[dict],
         trade_pnls: list[float],
-    ) -> None:
+        oms: OMS | None = None,
+        *,
+        trade_index: int = 0,
+        record_trade: bool = True,
+    ) -> bool:
         if sig.action not in {"BUY", "SELL"}:
-            return
+            return False
         side = OrderSide(sig.action)
         price_now = float(broker.last_prices.get(sig.symbol, Decimal("0")))
         if price_now <= 0:
-            return
+            return False
 
         decision = risk.check_pre_trade(
             symbol=sig.symbol,
@@ -182,41 +209,67 @@ class BacktestEngine:
         if not decision.passed:
             log.info("risk reject | {} {} {}@{} | {}",
                      sig.action, sig.quantity, sig.symbol, price_now, decision.detail)
-            return
+            return False
 
         cash_before = account.cash
         realized_before = account.realized_pnl
         try:
-            res = broker.submit_order(
-                client_order_id=f"BT-{sig.symbol}-{ts}",
-                symbol=sig.symbol,
-                side=side,
-                order_type=OrderType.MARKET,
-                quantity=sig.quantity,
-            )
+            if oms is not None:
+                order = oms.place_order(
+                    symbol=sig.symbol,
+                    side=side,
+                    quantity=sig.quantity,
+                    order_type=OrderType.MARKET,
+                    decision_id=sig.metadata.get("decision_id")
+                    if isinstance(sig.metadata.get("decision_id"), int)
+                    else None,
+                    ts=ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts,
+                    salt=f"bt-{trade_index}",
+                )
+                status = order.status
+                filled_quantity = order.filled_quantity
+                avg_fill_price = order.avg_fill_price
+                commission = order.commission
+                stamp_tax = order.stamp_tax
+            else:
+                res = broker.submit_order(
+                    client_order_id=f"BT-{sig.symbol}-{ts}",
+                    symbol=sig.symbol,
+                    side=side,
+                    order_type=OrderType.MARKET,
+                    quantity=sig.quantity,
+                )
+                status = res.status
+                filled_quantity = res.filled_quantity
+                avg_fill_price = res.avg_fill_price
+                commission = res.commission
+                stamp_tax = res.stamp_tax
         except Exception as e:
             log.exception("broker error: {}", e)
-            return
+            return False
 
-        if res.status.value == "FILLED":
+        if status == OrderStatus.FILLED:
             pnl_delta = float(account.realized_pnl - realized_before) if sig.action == "SELL" else 0.0
             if sig.action == "SELL":
                 trade_pnls.append(pnl_delta)
-            trades.append(
-                {
-                    "ts": str(ts),
-                    "symbol": sig.symbol,
-                    "side": sig.action,
-                    "quantity": res.filled_quantity,
-                    "price": float(res.avg_fill_price or 0),
-                    "commission": float(res.commission),
-                    "stamp_tax": float(res.stamp_tax),
-                    "reason": sig.reason,
-                    "cash_before": float(cash_before),
-                    "cash_after": float(account.cash),
-                    "realized_pnl_delta": pnl_delta,
-                }
-            )
+            if record_trade:
+                trades.append(
+                    {
+                        "ts": str(ts),
+                        "symbol": sig.symbol,
+                        "side": sig.action,
+                        "quantity": filled_quantity,
+                        "price": float(avg_fill_price or 0),
+                        "commission": float(commission),
+                        "stamp_tax": float(stamp_tax),
+                        "reason": sig.reason,
+                        "cash_before": float(cash_before),
+                        "cash_after": float(account.cash),
+                        "realized_pnl_delta": pnl_delta,
+                    }
+                )
+            return True
+        return False
 
     def _risk_check_adapter(self, ctx: dict, risk: RiskEngine, account: Account) -> tuple[bool, str | None]:
         d = risk.check_pre_trade(

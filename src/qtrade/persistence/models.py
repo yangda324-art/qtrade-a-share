@@ -28,6 +28,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from qtrade.core.time import utcnow
 
 # -------------------- 基类 + 枚举 --------------------
 
@@ -75,12 +76,13 @@ class StrategyRun(Base):
     strategy_id: Mapped[str] = mapped_column(String(80), index=True)
     strategy_version: Mapped[str] = mapped_column(String(40))     # git sha + cfg hash
     mode: Mapped[str] = mapped_column(String(20))                  # backtest/paper/live
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     config_json: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    orders: Mapped[list["OrderRecord"]] = relationship(back_populates="run")
+    orders: Mapped[list[OrderRecord]] = relationship(back_populates="run")
+    tick_logs: Mapped[list[TickLog]] = relationship(back_populates="run")
 
 
 class OrderRecord(Base):
@@ -110,9 +112,9 @@ class OrderRecord(Base):
     commission: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
     stamp_tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utcnow, onupdate=utcnow
     )
     reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     decision_id: Mapped[int | None] = mapped_column(
@@ -120,8 +122,8 @@ class OrderRecord(Base):
     )
 
     run: Mapped[StrategyRun | None] = relationship(back_populates="orders")
-    fills: Mapped[list["TradeFill"]] = relationship(back_populates="order")
-    decision: Mapped["AgentDecision | None"] = relationship(back_populates="orders")
+    fills: Mapped[list[TradeFill]] = relationship(back_populates="order")
+    decision: Mapped[AgentDecision | None] = relationship(back_populates="orders")
 
 
 class TradeFill(Base):
@@ -135,7 +137,7 @@ class TradeFill(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     commission: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
     stamp_tax: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
-    filled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    filled_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     order: Mapped[OrderRecord] = relationship(back_populates="fills")
 
@@ -155,7 +157,7 @@ class PositionSnapshot(Base):
     market_price: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     market_value: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     unrealized_pnl: Mapped[Decimal] = mapped_column(Numeric(18, 4))
-    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class AccountSnapshot(Base):
@@ -172,7 +174,38 @@ class AccountSnapshot(Base):
     total_assets: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     realized_pnl: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
     unrealized_pnl: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
-    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class TickLog(Base):
+    """模拟实盘每次 tick 的运行摘要，用于 UI 监控和事后排查。"""
+
+    __tablename__ = "tick_logs"
+    __table_args__ = (
+        Index("ix_tick_logs_run_ts", "run_id", "ts"),
+        Index("ix_tick_logs_strategy_ts", "strategy_id", "ts"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("strategy_runs.id"), nullable=True)
+    strategy_id: Mapped[str] = mapped_column(String(80), index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    quotes_count: Mapped[int] = mapped_column(Integer, default=0)
+    tradeable_quotes: Mapped[int] = mapped_column(Integer, default=0)
+    fallback_quotes: Mapped[int] = mapped_column(Integer, default=0)
+    signals_generated: Mapped[int] = mapped_column(Integer, default=0)
+    strategy_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    orders_placed: Mapped[int] = mapped_column(Integer, default=0)
+    risk_rejected: Mapped[int] = mapped_column(Integer, default=0)
+    limit_orders_submitted: Mapped[int] = mapped_column(Integer, default=0)
+    limit_orders_matched: Mapped[int] = mapped_column(Integer, default=0)
+
+    symbols_json: Mapped[list] = mapped_column(JSON, default=list)
+    per_symbol_json: Mapped[list] = mapped_column(JSON, default=list)
+    errors_json: Mapped[list] = mapped_column(JSON, default=list)
+
+    run: Mapped[StrategyRun | None] = relationship(back_populates="tick_logs")
 
 
 class AgentDecision(Base):
@@ -205,6 +238,36 @@ class AgentDecision(Base):
     risk_passed: Mapped[bool] = mapped_column(Boolean, default=True)
     risk_reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     orders: Mapped[list[OrderRecord]] = relationship(back_populates="decision")
+
+
+class DecisionOutcome(Base):
+    """AI 决策后的结果复盘。
+
+    这张表是长期记忆的基础：每条 AgentDecision 后续表现如何，需要独立沉淀，
+    不能只靠订单表临时推断。
+    """
+
+    __tablename__ = "decision_outcomes"
+    __table_args__ = (
+        UniqueConstraint("decision_id", "horizon_days", name="uq_decision_outcome_horizon"),
+        Index("ix_outcome_symbol_ts", "symbol", "evaluated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    decision_id: Mapped[int] = mapped_column(ForeignKey("agent_decisions.id"), index=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("strategy_runs.id"), nullable=True)
+    strategy_id: Mapped[str] = mapped_column(String(80), index=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    action: Mapped[DecisionAction] = mapped_column(Enum(DecisionAction))
+    horizon_days: Mapped[int] = mapped_column(Integer)
+
+    entry_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    exit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    return_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    max_drawdown_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    metrics_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

@@ -114,7 +114,18 @@ class LLMClient:
             try:
                 parsed = json.loads(text)
             except json.JSONDecodeError as e:
-                raise LLMError(f"模型返回非合法 JSON：{e}\n原文：{text[:500]}") from e
+                # 兜底：用 json-repair 修复常见错误（未转义引号、多余逗号、缺右括号等）
+                # DeepSeek reasoner 在长 reasoning 输出里偶发非法 JSON，修复成功率很高
+                try:
+                    from json_repair import repair_json
+                    parsed = json.loads(repair_json(text))
+                    log.warning("LLM 返回非合法 JSON，已用 json-repair 修复 | 原 error: {}", e)
+                except Exception as repair_err:
+                    raise LLMError(
+                        f"模型返回非合法 JSON 且修复失败：{e}\n"
+                        f"修复尝试 error：{repair_err}\n"
+                        f"原文：{text[:500]}"
+                    ) from e
 
         cost = get_cost_tracker().record(
             model=used_model,

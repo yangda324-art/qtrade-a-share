@@ -10,7 +10,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 import pandas as pd
@@ -53,9 +52,11 @@ class Strategy(ABC):
 
     def on_start(self) -> None:
         """运行开始时回调。可用于初始化指标缓存等。"""
+        return None
 
     def on_finish(self) -> None:
         """运行结束时回调。可用于清理或落库。"""
+        return None
 
     @abstractmethod
     def on_bar(self, ctx: StrategyContext) -> list[Signal]:

@@ -1,11 +1,19 @@
-"""PySide6 主窗口骨架。
+"""PySide6 主窗口（极简深色 dashboard 风格）。
 
-5 个 tab 占位：Dashboard / K 线 / 回测 / 订单 / Agent 决策。
-每个 tab 先放一个简单的占位组件，后续会话里再迭代填充内容。
+布局：
+    +-------------------------------------------------+
+    | [Sidebar 220px] | [Stacked Content]             |
+    |                 |                               |
+    |                 |   ← 各 view widget 切换显示    |
+    |                 |                               |
+    +-------------------------------------------------+
+    | StatusBar                                       |
+    +-------------------------------------------------+
 
 启动::
 
-    python -m qtrade.ui.main
+    qtrade ui
+    python -m qtrade.ui.main      # 等价
 """
 from __future__ import annotations
 
@@ -18,97 +26,130 @@ log = get_logger(__name__)
 
 def _import_qt():
     try:
+        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import (
             QApplication,
+            QHBoxLayout,
             QLabel,
             QMainWindow,
+            QStackedWidget,
             QStatusBar,
-            QTabWidget,
             QVBoxLayout,
             QWidget,
         )
     except ImportError as e:  # pragma: no cover
         raise SystemExit("PySide6 未安装：pip install PySide6") from e
-    return QApplication, QLabel, QMainWindow, QStatusBar, QTabWidget, QVBoxLayout, QWidget
-
-
-def _placeholder(label: str, hint: str = ""):
-    QApplication, QLabel, QMainWindow, QStatusBar, QTabWidget, QVBoxLayout, QWidget = _import_qt()
-    w = QWidget()
-    layout = QVBoxLayout(w)
-    title = QLabel(f"<h2>{label}</h2>")
-    layout.addWidget(title)
-    if hint:
-        layout.addWidget(QLabel(hint))
-    layout.addStretch()
-    return w
-
-
-def _build_dashboard():
-    return _placeholder(
-        "Dashboard",
-        "运行状态 / 当日 P&L / 持仓总览 / 风险预警一览。\n（Phase 4 完成）",
-    )
-
-
-def _build_kline():
-    QApplication, QLabel, QMainWindow, QStatusBar, QTabWidget, QVBoxLayout, QWidget = _import_qt()
-    w = QWidget()
-    layout = QVBoxLayout(w)
-    layout.addWidget(QLabel("<h2>K 线</h2>"))
-    try:
-        import pyqtgraph as pg
-        plot = pg.PlotWidget(title="K 线（占位）")
-        plot.showGrid(x=True, y=True)
-        layout.addWidget(plot)
-    except ImportError:
-        layout.addWidget(QLabel("pyqtgraph 未安装；安装后这里会显示 K 线"))
-    layout.addStretch()
-    return w
-
-
-def _build_backtest():
-    return _placeholder(
-        "回测",
-        "选择策略 + 标的 + 区间 → 跑回测 → 看权益曲线和指标。\n"
-        "Phase 1 已可用 CLI 跑回测：qtrade backtest --strategy ma_cross --symbol 600519",
-    )
-
-
-def _build_orders():
-    return _placeholder(
-        "订单 / 持仓",
-        "实时订单状态 + 当前持仓 + 资金账本。\n（接入模拟盘 / 实盘后可用）",
-    )
-
-
-def _build_agent_log():
-    return _placeholder(
-        "Agent 决策",
-        "每次多 Agent 决策的完整链路：每个 Agent 的输入 / 输出 / 用时 / token。\n"
-        "数据来自 SQLite agent_decisions 表。",
+    return (
+        QApplication, Qt, QHBoxLayout, QLabel, QMainWindow,
+        QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
     )
 
 
 def run() -> None:
-    QApplication, QLabel, QMainWindow, QStatusBar, QTabWidget, QVBoxLayout, QWidget = _import_qt()
+    (
+        QApplication, Qt, QHBoxLayout, QLabel, QMainWindow,
+        QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
+    ) = _import_qt()
+
+    # 业务 widgets 延迟 import
+    from qtrade.ui.sidebar import NavGroup, NavItem, Sidebar
+    from qtrade.ui.theme import apply_theme
+    from qtrade.ui.windows.agent_log import AgentLogWidget
+    from qtrade.ui.windows.backtest import BacktestWidget
+    from qtrade.ui.windows.compare import CompareWidget
+    from qtrade.ui.windows.dashboard import DashboardWidget
+    from qtrade.ui.windows.kline import KlineWidget
+    from qtrade.ui.windows.market_watch import MarketWatchWidget
+    from qtrade.ui.windows.orders import OrdersWidget
+    from qtrade.ui.windows.paper_check import PaperCheckWidget
+    from qtrade.ui.windows.performance import PerformanceWidget
+    from qtrade.ui.windows.run_control import RunControlWidget
+    from qtrade.ui.windows.tick_log import TickLogWidget
 
     app = QApplication.instance() or QApplication(sys.argv)
+    apply_theme(app)
 
     win = QMainWindow()
-    win.setWindowTitle("qtrade — A 股 LLM 多 Agent 量化平台")
-    win.resize(1200, 800)
+    win.setWindowTitle("qtrade")
+    win.resize(1440, 900)
 
-    tabs = QTabWidget()
-    tabs.addTab(_build_dashboard(), "Dashboard")
-    tabs.addTab(_build_kline(), "K 线")
-    tabs.addTab(_build_backtest(), "回测")
-    tabs.addTab(_build_orders(), "订单 / 持仓")
-    tabs.addTab(_build_agent_log(), "Agent 决策")
-    win.setCentralWidget(tabs)
+    # ---- 中央容器：左 sidebar + 右 stack ----
+    central = QWidget()
+    root = QHBoxLayout(central)
+    root.setContentsMargins(0, 0, 0, 0)
+    root.setSpacing(0)
 
+    nav_groups = [
+        NavGroup(
+            title="交易",
+            items=(
+                NavItem("dashboard", "▦", "总览"),
+                NavItem("run_control", "▶", "模拟盘"),
+                NavItem("paper_check", "✓", "模拟验收"),
+                NavItem("market_watch", "◌", "实时行情"),
+                NavItem("tick_log", "▣", "运行日志"),
+                NavItem("performance", "↗", "绩效报告"),
+                NavItem("compare",   "≡", "策略对比"),
+                NavItem("orders",    "▤", "订单 / 持仓"),
+            ),
+        ),
+        NavGroup(
+            title="分析",
+            items=(
+                NavItem("kline",     "∿", "K 线"),
+                NavItem("backtest",  "↻", "回测"),
+            ),
+        ),
+        NavGroup(
+            title="智能",
+            items=(
+                NavItem("agent_log", "✦", "Agent 决策"),
+            ),
+        ),
+    ]
+    sidebar = Sidebar(nav_groups)
+
+    stack = QStackedWidget()
+    # 内容区有自己的内边距，让卡片不贴边
+    stack_wrap = QWidget()
+    wrap_layout = QVBoxLayout(stack_wrap)
+    wrap_layout.setContentsMargins(20, 18, 20, 18)
+    wrap_layout.addWidget(stack)
+
+    # 注册视图
+    views: dict[str, QWidget] = {
+        "dashboard": DashboardWidget(),
+        "run_control": RunControlWidget(),
+        "paper_check": PaperCheckWidget(),
+        "market_watch": MarketWatchWidget(),
+        "tick_log": TickLogWidget(),
+        "performance": PerformanceWidget(),
+        "compare":   CompareWidget(),
+        "orders":    OrdersWidget(),
+        "kline":     KlineWidget(),
+        "backtest":  BacktestWidget(),
+        "agent_log": AgentLogWidget(),
+    }
+    for w in views.values():
+        stack.addWidget(w)
+
+    def _switch(key: str) -> None:
+        if key in views:
+            stack.setCurrentWidget(views[key])
+
+    sidebar.activated.connect(_switch)
+
+    root.addWidget(sidebar)
+    root.addWidget(stack_wrap, stretch=1)
+    win.setCentralWidget(central)
+
+    # 默认进入 Dashboard
+    sidebar.set_active("dashboard")
+    stack.setCurrentWidget(views["dashboard"])
+
+    # 状态栏
     bar = QStatusBar()
-    bar.showMessage("Phase 0：UI 骨架。后续会话会逐 tab 填充。")
+    bar.showMessage("qtrade · LLM 多 Agent 量化平台 · Phase 4")
     win.setStatusBar(bar)
 
     win.show()

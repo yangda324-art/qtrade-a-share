@@ -97,7 +97,7 @@ def _print(result) -> None:
     console.print(table)
 
     if result.trades:
-        console.print(f"\n[bold]最近 5 笔交易：[/bold]")
+        console.print("\n[bold]最近 5 笔交易：[/bold]")
         for t in result.trades[-5:]:
             console.print(
                 f"  [{t['ts']}] {t['side']:<4} {t['symbol']} x{t['quantity']:<6}"

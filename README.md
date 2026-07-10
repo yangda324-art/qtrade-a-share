@@ -55,20 +55,43 @@ python scripts/download_history.py --symbols 600519 000001 --start 2023-01-01
 python scripts/run_backtest_demo.py
 
 # 7. 打开桌面 UI（可选）
-python -m qtrade.ui.main
+qtrade ui
 ```
+
+## 用 LLM 多 Agent 决策
+
+1. 注册 + 充值（最少 1 元）：https://platform.deepseek.com
+2. 拿到 API key 填进 `.env`：
+   ```
+   DEEPSEEK_API_KEY=sk-xxxxx
+   ```
+3. 跑一次决策（不下单，纯调试 / 看 token 成本）：
+   ```bash
+   qtrade decide 600519 --lookback-days 120
+   ```
+4. 在桌面 UI 的「Agent 决策」tab 里点任意一行可看 5 个 Agent 的完整 trace。
+5. 让 LLM 直接驱动模拟盘：
+   ```bash
+   qtrade run-paper --strategy llm --symbol 600519 --once
+   qtrade run-paper --strategy llm --symbol 600519 --interval-seconds 10 --decision-interval-minutes 15
+   ```
+
+启动 `llm` 模拟盘前，CLI 会检查 `DEEPSEEK_API_KEY`、prompt 版本、辩论轮数和仓位参数。
+LLM 只输出交易意图，真实执行前仍会经过行情新鲜度、价格偏离保护、现金/持仓/T+1 和硬风控检查。
+
+**成本预估**：单次完整 5-Agent 决策约 ¥0.05–0.20。日级策略 10 只票一天 ¥0.5–2，月成本约 ¥10–60。
 
 ## 路线图
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
-| 0 | 工程基础（配置/日志/数据库/CLI） | 🟡 进行中 |
-| 1 | 数据层 + 回测引擎 + 双均线基线 | 🟡 进行中 |
-| 2 | 模拟盘对接（掘金 GM SDK）+ OMS + 基础风控 | ⚪ 待开始 |
-| 3 | DeepSeek 多 Agent 决策图（4 Agent） | 🟡 骨架已有 |
-| 4 | 完整风控 + 监控告警 + UI 完整化 | ⚪ 待开始 |
-| 5 | 小额实盘（Live） | ⚪ 待开始 |
-| 6 | ML 因子 / 多策略组合 / 舆情深度抽取 | ⚪ 待开始 |
+| 0 | 工程基础（配置/日志/数据库/CLI） | ✅ 完成 |
+| 1 | 实时盯盘 LiveRunner + Scheduler + UI 实时联动 | ✅ 完成 |
+| 2 | K 线 / 回测 UI 表单化 + LLM 多 Agent 跑通 + 测试 | ✅ 完成 |
+| 3 | 多策略并行（独立账户） + 业绩对比 + 告警 + 后台守护 | ✅ 完成 |
+| 4 | LLM Agent 深度优化（research 数据 + 多轮辩论 + Prompt A/B） | ✅ 完成 |
+| 5 | 接入真实券商 + 小额实盘 | ⚪ 待开始 |
+| 6 | ML 因子 / 舆情深度抽取 | ⚪ 待开始 |
 
 ## 重要警告
 

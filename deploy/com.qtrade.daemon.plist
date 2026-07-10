@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    qtrade 后台守护配置（macOS launchd）。
+    用法：
+      1. 编辑下面的 ProgramArguments 第一项为你 .venv 里 python 的绝对路径
+      2. 按需改 WorkingDirectory / Strategy / Symbol 参数
+      3. cp 此文件到 ~/Library/LaunchAgents/com.qtrade.daemon.plist
+      4. launchctl load ~/Library/LaunchAgents/com.qtrade.daemon.plist
+      5. launchctl start com.qtrade.daemon
+      6. 查看日志 tail -f ~/Library/Logs/qtrade/daemon.log
+      7. 卸载：launchctl unload ~/Library/LaunchAgents/com.qtrade.daemon.plist
+  -->
+  <key>Label</key>
+  <string>com.qtrade.daemon</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- ⚠️ 改成你 venv 里 python 的绝对路径 -->
+    <string>/Users/dayang/Desktop/量化交易平台/.venv/bin/python</string>
+    <string>-m</string>
+    <string>qtrade.cli</string>
+    <string>run-multi</string>
+    <string>--strategy</string>
+    <string>ma_cross</string>
+    <string>--strategy</string>
+    <string>macd</string>
+    <string>--strategy</string>
+    <string>bollinger</string>
+    <string>--symbol</string>
+    <string>000001</string>
+    <string>--symbol</string>
+    <string>600519</string>
+    <string>--interval-minutes</string>
+    <string>5</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/dayang/Desktop/量化交易平台</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- 启动时立即运行 -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- 崩溃后自动重启 -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!-- 重启间隔（秒），避免无限崩溃刷屏 -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <!-- 日志重定向 -->
+  <key>StandardOutPath</key>
+  <string>/Users/dayang/Library/Logs/qtrade/daemon.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/dayang/Library/Logs/qtrade/daemon.err.log</string>
+
+  <!-- 进程级资源限制（可选） -->
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key>
+    <integer>1024</integer>
+  </dict>
+</dict>
+</plist>

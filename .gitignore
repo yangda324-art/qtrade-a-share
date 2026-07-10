@@ -21,8 +21,8 @@ venv/
 htmlcov/
 
 # ---- 项目数据 ----
-data/
-logs/
+/data/
+/logs/
 *.sqlite
 *.sqlite3
 *.db

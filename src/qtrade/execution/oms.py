@@ -11,12 +11,13 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from collections.abc import Callable
+from datetime import datetime
 from decimal import Decimal
-from typing import Callable
 
 from qtrade.core.exceptions import BrokerError, RiskRejected
 from qtrade.core.logging import get_logger
+from qtrade.core.time import utcnow
 from qtrade.execution.broker.base import Broker
 from qtrade.persistence import session_scope
 from qtrade.persistence.models import (
@@ -70,7 +71,7 @@ class OMS:
         salt: str = "",
     ) -> OrderRecord:
         """提交一个订单。返回最终 ORM 记录（已 commit）。"""
-        ts = ts or datetime.utcnow()
+        ts = ts or utcnow()
 
         # 1) 风控
         ctx = {
@@ -145,7 +146,7 @@ class OMS:
                         price=res.avg_fill_price or Decimal("0"),
                         commission=res.commission,
                         stamp_tax=res.stamp_tax,
-                        filled_at=datetime.utcnow(),
+                        filled_at=utcnow(),
                     )
                 )
             s.flush()

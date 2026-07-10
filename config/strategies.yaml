@@ -17,7 +17,12 @@ strategies:
     class: qtrade.strategies.llm.graph.LLMMultiAgentStrategy
     enabled: false             # 默认关闭，调好后再打开
     params:
-      decision_threshold: 0.6
+      # 实测 LLM 决策信心普遍在 0.40-0.55，0.6 阈值过严几乎不下单。
+      # 0.45 让"温和但有方向"的决策能触发，更符合 LLM 的天然信心区间。
+      decision_threshold: 0.45
       position_pct: 0.2
+      prompt_version: v2         # 用 V2 prompts（多周期收益+相对指数+多轮辩论）
+      debate_rounds: 2
     universe:
       - "600519.SH"
+      - "000001.SZ"

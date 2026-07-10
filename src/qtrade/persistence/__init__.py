@@ -9,9 +9,11 @@ from qtrade.persistence.models import (
     AccountSnapshot,
     AgentDecision,
     Base,
+    DecisionOutcome,
     OrderRecord,
     PositionSnapshot,
     StrategyRun,
+    TickLog,
     TradeFill,
 )
 
@@ -26,5 +28,7 @@ __all__ = [
     "PositionSnapshot",
     "AccountSnapshot",
     "AgentDecision",
+    "DecisionOutcome",
     "StrategyRun",
+    "TickLog",
 ]

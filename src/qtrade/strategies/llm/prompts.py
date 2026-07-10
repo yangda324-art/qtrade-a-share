@@ -102,6 +102,7 @@ PORTFOLIO_MANAGER = """\
 - 标的: {symbol} ({symbol_name})
 - 技术观点: {technical_view}
 - 舆情观点: {sentiment_view}
+- 历史决策记忆: {decision_memory}
 - 多头论点: {bull_view}
 - 空头论点: {bear_view}
 
@@ -116,6 +117,15 @@ PORTFOLIO_MANAGER = """\
   "target_position_pct": 0.0~1.0,    // 目标仓位占总资产比例；HOLD 时填当前持仓比例
   "confidence": 0.0~1.0,
   "reasoning": "3-5 句话总结决策依据",
-  "risks": ["风险点1", "风险点2"]
+  "risks": ["风险点1", "风险点2"],
+  "evidence": ["关键证据1", "关键证据2"],
+  "execution": {{
+    "order_type": "MARKET | LIMIT",
+    "limit_price": null,
+    "time_in_force": "DAY | GTC"
+  }},
+  "horizon_days": 1~252,
+  "max_loss_pct": 0.0~1.0,
+  "take_profit_pct": 0.0~5.0
 }}
 """

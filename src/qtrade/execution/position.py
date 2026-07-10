@@ -11,9 +11,9 @@ A 股的关键约束：
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Iterator
 
 
 @dataclass
@@ -37,17 +37,30 @@ class Position:
     def update_market_price(self, price: float | Decimal) -> None:
         self.market_price = Decimal(str(price))
 
-    def add_buy(self, quantity: int, price: Decimal) -> None:
+    def add_buy(self, quantity: int, price: Decimal, fees: Decimal = Decimal("0")) -> None:
+        """买入加仓，更新加权平均成本。
+
+        ``fees`` 是本次买入的手续费总额（佣金 + 过户费）。会被并入 ``avg_cost``，
+        这样浮动盈亏 = (现价 - 含费成本) × 持仓 直接反映"现在平仓是赚是赔"，
+        符合 A 股职业平台的"含费成本"约定。
+        """
         if quantity <= 0:
             return
         new_total = self.quantity + quantity
-        # 加权平均成本
+        # 加权平均成本（含本次买入手续费）
         if new_total > 0:
-            self.avg_cost = (
-                (self.avg_cost * Decimal(self.quantity)) + price * Decimal(quantity)
-            ) / Decimal(new_total)
+            new_total_cost = (
+                self.avg_cost * Decimal(self.quantity)
+                + price * Decimal(quantity)
+                + Decimal(str(fees))
+            )
+            self.avg_cost = new_total_cost / Decimal(new_total)
         self.quantity = new_total
         self.today_buy += quantity
+        # 关键修复：新建持仓时 market_price 默认 0，会导致 UI 显示市值为 0、浮亏看着像清盘。
+        # 至少把成交价当成"当前最新价"——后续 update_market_price 会刷新到真实快照价。
+        if self.market_price == 0:
+            self.market_price = price
         # available 不变 —— T+1 还没解锁
 
     def add_sell(self, quantity: int, price: Decimal) -> None:

@@ -33,6 +33,9 @@ llm:
   request_timeout_s: 120
   cache_enabled: true
   cache_ttl_hours: 24
+  daily_max_decisions: 50        # 每日最多 LLM 决策次数；0 表示不限制
+  daily_max_tokens: 200000       # 每日最多 token；0 表示不限制
+  daily_max_cost_usd: 5.0        # 每日估算成本上限；0 表示不限制
 
 agents:
   enabled:
@@ -54,3 +57,8 @@ monitoring:
     enable_telegram: false
     enable_serverchan: false
   metrics_retention_days: 90
+
+trading:
+  realtime:
+    max_quote_age_seconds: 15       # 实时模拟/实盘下单前，行情最大允许年龄
+    max_price_deviation_bps: 50     # 手动下单时，最新价相对界面参考价最大偏离（50bp = 0.50%）

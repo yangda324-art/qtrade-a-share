@@ -135,6 +135,30 @@ class PaperBroker(Broker):
     def get_positions(self) -> dict[str, dict]:
         return self.account.positions.to_dict()
 
+    def execute_order_at_price(
+        self,
+        *,
+        client_order_id: str,
+        symbol: str,
+        side: OrderSide,
+        quantity: int,
+        price: Decimal,
+        broker_order_id: str | None = None,
+    ) -> BrokerOrderResult:
+        """按指定价格立即成交。
+
+        用于持久化限价单被外部行情触发后的撮合；此时挂单状态在数据库里，
+        不依赖 ``_pending_limits`` 这份进程内簿子。
+        """
+        return self._fill(
+            broker_order_id=broker_order_id or f"PB-{uuid.uuid4().hex[:12]}",
+            client_order_id=client_order_id,
+            symbol=symbol,
+            side=side,
+            quantity=quantity,
+            price=price,
+        )
+
     # ---------------- 内部 ----------------
 
     def _apply_slippage(self, price: Decimal, side: OrderSide) -> Decimal:
@@ -194,7 +218,12 @@ class PaperBroker(Broker):
                     reject_reason=f"insufficient cash on fill (need {total_cost:.2f})",
                 )
             self.account.cash -= total_cost
-            self.account.positions.get(symbol).add_buy(quantity, price)
+            # 把买入手续费并入持仓成本：浮动盈亏直接反映真实"平仓即亏"
+            self.account.positions.get(symbol).add_buy(quantity, price, fees=fees.total)
+            # 双重保险：成交后立即把 market_price 同步到成交价 + last_prices 记录，
+            # 避免新建持仓时市值快照为 0
+            self.account.positions.get(symbol).update_market_price(price)
+            self.last_prices[symbol] = price
         else:
             pos = self.account.positions.get(symbol)
             if pos.available < quantity:
